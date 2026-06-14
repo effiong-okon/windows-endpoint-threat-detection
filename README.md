@@ -46,7 +46,7 @@ The goal was to understand not just how attacks work, but how they look from the
 
 ## Lab Build: Setting Up the Detection Stack
 
-Before simulating any attacks, I built the detection platform from scratch. Building it myself helped me understand exactly where every piece of telemetry in Phase 2 actually comes from.
+Before simulating any attacks, I built the detection architecture from scratch.
 
 ### Step 1: Prepare the Ubuntu Manager
 
