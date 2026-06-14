@@ -1,34 +1,23 @@
-# Endpoint Malware Investigation
+# Windows Endpoint Threat Detection And Investigation: Wazuh EDR/SIEM
 ### A Wazuh EDR/SIEM Detection Lab
 
-**Lab Type:** Security Engineering + Offensive Simulation + EDR Detection + Incident Response
+**Lab Type:** Offensive Simulation + EDR Detection + Incident Response 
 
 **Platform:** Wazuh 4.7 (Open Source SIEM + EDR)
 
-**Analyst:** Effiong Okon
-
 **Environment:** Ubuntu 22.04 VM (Wazuh Manager/Indexer/Dashboard + Attacker) | Windows 11 VM (Victim Endpoint + Wazuh Agent) | VirtualBox Host-Only Network
+
+**Analyst:** Effiong Okon
 
 ---
 
 ## Overview
 
-After completing endpoint security training at AltSchool Africa, I wanted to
-go beyond reading about detections and actually build the platform that
-produces them.
+After several sessions of endpoint security training at AltSchool Africa, I wanted to go beyond the theory and put it into practice, so I built this lab from scratch.
 
-So I built this lab from scratch: a Wazuh manager, indexer, and dashboard on
-Ubuntu, a Wazuh agent and Sysmon on a Windows 11 endpoint, and a host-only
-network connecting the two. Once the stack was running and producing a clean
-baseline, I switched hats, used the same Ubuntu VM to simulate a realistic
-post-exploitation attack chain with Metasploit, then switched back to the
-analyst seat and investigated the entire compromise using only the Wazuh
-dashboard.
+I set up two virtual machines, Ubuntu as the attacker and Wazuh manager, Windows 11 as the victim endpoint, and simulated a realistic post-exploitation attack chain. Then I switched roles and investigated the entire attack using Wazuh as my SIEM and EDR platform.
 
-The goal was to understand the full lifecycle: how a detection stack gets
-built, what it looks like when it's healthy, what an intrusion actually
-produces in the logs, and how to reconstruct the attacker's actions from
-that evidence alone.
+The goal was to understand not just how attacks work, but how they look from the defender's seat, what evidence they leave, where to find it, and how to piece the story together from raw logs.
 
 ---
 
@@ -37,7 +26,7 @@ that evidence alone.
 | Component | Role | IP |
 |---|---|---|
 | Ubuntu 22.04 VM | Wazuh Manager, Indexer, Dashboard + Attacker | 192.168.56.10 |
-| Windows 11 VM | Victim Endpoint — "Windows-Endpoint" (Wazuh Agent) | 192.168.56.20 |
+| Windows 11 VM | Victim Endpoint: "Windows-Endpoint" (Wazuh Agent) | 192.168.56.20 |
 | VirtualBox Host-Only Network | Isolated lab network | 192.168.56.0/24 |
 
 > Note: agent enrolment was initiated against the manager's secondary
@@ -52,7 +41,7 @@ that evidence alone.
 | Tool | Purpose |
 |---|---|
 | Wazuh 4.7 | SIEM + EDR: Centralised detection, alerting, FIM, and SCA |
-| Sysmon (SwiftOnSecurity config) | Rich endpoint telemetry — process, network, file, registry events |
+| Sysmon (SwiftOnSecurity config) | Rich endpoint telemetry, process, network, file, registry events |
 | Metasploit Framework | Attack simulation, payload generation and C2 |
 | msfvenom | Reverse TCP payload generation |
 | Windows Event Viewer | Native log reference for cross-validation |
@@ -264,38 +253,35 @@ The 4720 followed immediately by 4732 is a classic attacker pattern: create a ba
 
 ### Finding 5: Registry Persistence Captured (Sysmon Event ID 13)
 
-![Finding 5 — Registry Run key persistence written by reg.exe](screenshots/screenshot-15-registry-run-key.png)
+![Finding 5 — Registry Run key persistence written by reg.exe](screenshots/screenshot-15-registry-runkey.png)
 
 Wazuh captured the Sysmon registry modification event (Event ID 13) showing the exact Run key path and the malicious value being written. Rule ID 92302, severity 8, technique T1547.001. The full registry target object was:
 
-HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SystemUpdateHelper
-
-`HKU\<SID>\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, pointing at
-`C:\Users\Effizy\Downloads\not_malware.exe`. This is the persistence
-mechanism that would re-launch the payload on every logon — and it was
-caught the moment `reg.exe` wrote it, not on next reboot.
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SystemUpdateHelper` The value written pointed back to `C:\Users\Effizy\Downloads\not_malware.exe,` persistence confirmed through a second independent mechanism.
 
 ---
 
-### Finding 6 — Malicious Service Installed
+### Finding 6: Malicious Service Installed (Event ID 7045)
 
-[SCREENSHOT 16]
+![Finding 6 — Malicious service WazuhTestService installed](screenshots/screenshot-16-service-installed.png)
 
-**Rule 61138, Level 5, Technique T1543.003, Event ID 7045.** A new service,
-`WazuhTestService`, was installed with its binary path pointing at
-`C:\Users\Effizy\Downloads\not_malware.exe`, start type `auto start`, running
-as `LocalSystem`. A service binary living in `Downloads` running as
-`LocalSystem` with auto-start is persistence at the highest privilege level —
-this service would survive every reboot and run with full system rights.
+Wazuh detected a new service **```WazuhTestService```** being installed. Technique T1543.003, severity 9. Key fields:
+
+Account: `LocalSystem` maximum privilege
+Start type: `auto start` survives every reboot
+Binary path: `C:\Users\Effizy\Downloads\not_malware.exe`
+
+A Downloads directory path for a service binary is always suspicious. This is persistence via a second mechanism, and the combination of LocalSystem + auto start + non-standard path is an immediate red flag.
 
 ---
 
-### Finding 7 — File Integrity Monitoring Catches a New File
+### Finding 7:  File Integrity Monitoring Alert
 
-[SCREENSHOT 17a / 17b]
+![Finding 7 — FIM alert: new file added to Downloads](screenshots/screenshot-17a-fim-file-added.png)
+![Finding 7 — FIM alert detail with hashes and permissions](screenshots/screenshot-17b-fim-file-details.png)
 
 **Rule 554, Level 5, Mode: realtime.** I configured FIM to watch the
-Downloads folder — the most common landing spot for phishing payloads — and
+Downloads folder, which is the most common landing spot for phishing payloads, and
 to prove it works in real time, I dropped a second file, `test_payload.exe`,
 into Downloads. Wazuh alerted on it immediately, capturing its SHA1/SHA256
 hashes and permissions. This demonstrates FIM is watching continuously, not
@@ -303,24 +289,27 @@ just on a scheduled scan.
 
 ---
 
-### Finding 8 — Audit Log Cleared (and Why It Didn't Matter)
+### Finding 8: Audit Log Cleared (Event ID 1102) (and Why It Didn't Matter)
 
-[SCREENSHOT 18]
+![Finding 8 — Audit log cleared, Event ID 1102](screenshots/screenshot-18-log-cleared.png)
 
 **Rule 63103, Level 5, Technique T1070, Event ID 1102.** The attacker ran
-`wevtutil cl Security` to wipe the Windows Security log — but Wazuh had
+`wevtutil cl Security` to wipe the Windows Security log, but Wazuh had
 already forwarded every event above (Findings 3, 4, 5, 6) to the centralised
 indexer before the clear happened. Checking the local Windows Event Viewer
 afterward shows it empty, but every one of those alerts still exists in
-Wazuh. **This is the single most important finding in the lab** — it
+Wazuh. 
+
+**This is the single most important finding in the lab**, it
 demonstrates exactly why centralised logging exists: to preserve evidence
 an attacker can't reach.
 
 ---
 
-### Finding 9 — Failed Authentication Detected
+### Finding 9: Failed Authentication Detected
 
-[SCREENSHOT 20a / 20b]
+![Finding 9 — Failed logon alert](screenshots/screenshot-20a-failed-logon.png)
+![Finding 9 — Failed logon event detail](screenshots/screenshot-20b-failed-logon-detail.png)
 
 **Rule 60122, Level 5, Event ID 4625.** Separately, I triggered a failed
 login against the `Effizy` account (wrong password) and Wazuh logged it as
@@ -333,25 +322,25 @@ a production deployment.
 
 ---
 
-### Additional Capability — Security Configuration Assessment (SCA)
+### Additional Capability: Security Configuration Assessment (SCA)
 
-[SCREENSHOT 19]
+![SCA — CIS benchmark checks on Windows endpoint](screenshots/screenshot-19-sca-cis-benchmark.png)
 
 Alongside the alert-based detections above, Wazuh's **SCA module** ran CIS
-benchmark checks against the Windows endpoint — for example, verifying
+benchmark checks against the Windows endpoint, for example, verifying
 password history, minimum password age/length, and account lockout duration
 against the **CIS Microsoft Windows 10 Enterprise Benchmark v1.12.0**. This
 is a different layer from the real-time alerts in Findings 1–9: it's
 continuous *compliance* checking rather than *intrusion* detection, and it's
-worth including because it shows Wazuh covering both sides — "is this
+worth including because it shows Wazuh covering both sides, "is this
 endpoint being attacked?" and "is this endpoint configured securely in the
 first place?"
 
 ---
 
-## PHASE 3 — ERADICATION AND VERIFICATION
+## PHASE 3: ERADICATION AND VERIFICATION
 
-[SCREENSHOT 21]
+![Eradication — all cleanup commands completed successfully](screenshots/screenshot-21-cleanup-complete.png)
 
 I removed the artifacts the attacker left behind:
 
@@ -377,9 +366,9 @@ Edge — remain), and `netstat` shows no connection on port 4444.
 > If `not_malware.exe` is still sitting in Downloads, add
 > `del /F C:\Users\Effizy\Downloads\not_malware.exe` to fully close this out.
 
-[SCREENSHOT 22]
+![Post-cleanup Wazuh dashboard — cleanup activity detected](screenshots/screenshot-22-post-cleanup-dashboard.png)
 
-### Finding 10 — Wazuh Also Detected the Cleanup
+### Finding 10: Wazuh Also Detected the Cleanup
 
 The "after" dashboard (last 15 minutes) isn't completely silent — it shows
 **2 alerts at Level 12 or above**, with the Top 5 Alerts including
@@ -390,7 +379,7 @@ flagged them the same way it flagged their creation in Findings 3 and 4.
 **This is arguably the best closing point of the whole lab** — the same
 detection logic that caught the attacker also caught me cleaning up after
 them. Wazuh doesn't distinguish between "bad guy creating a backdoor" and
-"good guy removing one" — it just reports account and privilege changes,
+"good guy removing one", it just reports account and privilege changes,
 which is exactly what you want from an EDR.
 
 ---
@@ -410,11 +399,11 @@ which is exactly what you want from an EDR.
 
 ---
 
-## Detection Coverage — Wazuh Rules & MITRE ATT&CK Mapping
+## Detection Coverage: Wazuh Rules & MITRE ATT&CK Mapping
 
 | Rule ID | Level | Technique(s) | Tactic(s) | What Was Detected |
 |---|---|---|---|---|
-| 60602 | 0 | — | — | Application crash — first trace of not_malware.exe execution |
+| 60602 | 0 | — | — | Application crash, first trace of not_malware.exe execution |
 | 61618 | 12 | T1055 | Defense Evasion, Privilege Escalation | Suspicious svchost.exe with null parent GUID |
 | 60109 | 8 | T1098 | Persistence | Local account created (WazuhTestBackdoor) |
 | 60154 | 12 | T1484 | Defense Evasion, Privilege Escalation | Administrators group membership changed (Event 4732) |
@@ -422,7 +411,7 @@ which is exactly what you want from an EDR.
 | 61138 | 5 | T1543.003 | Persistence, Privilege Escalation | New Windows service created (Event 7045) |
 | 554 | 5 | — | — | File added to Downloads (FIM, real-time) |
 | 63103 | 5 | T1070 | Defense Evasion | Security audit log cleared (Event 1102) |
-| 60122 | 5 | T1078, T1531 | Initial Access, Persistence, Privilege Escalation, Defense Evasion, Impact | Failed logon — bad password (Event 4625) |
+| 60122 | 5 | T1078, T1531 | Initial Access, Persistence, Privilege Escalation, Defense Evasion, Impact | Failed logon, bad password (Event 4625) |
 
 ---
 
@@ -433,26 +422,26 @@ Windows Security log. Every alert tied to that activity still existed in
 Wazuh. You cannot destroy evidence that has already left the machine.
 
 **Behaviour-based detection catches what signatures miss.** Wazuh detected
-the attack chain using Windows event IDs and Sysmon telemetry — not file
+the attack chain using Windows event IDs and Sysmon telemetry, not file
 signatures. The same detection logic would catch any variant of this attack
 because it watches what processes *do*, not what they look like.
 
-**Severity levels matter — and so does reading them correctly.** Not every
+**Severity levels matter, and so does reading them correctly.** Not every
 alert that's part of an attack chain is high severity on its own (Finding 1
 was Level 0). Building the full picture means correlating low- and
 high-severity events into a timeline, not just filtering for red alerts.
 
 **Detection doesn't know who's typing.** The same rules that caught the
 attacker creating and escalating a backdoor account also caught me removing
-it during cleanup. That's not a bug — it's the point.
+it during cleanup. That's not a bug, it's the point.
 
 **Sysmon is the difference between good logs and great logs.** Native
 Windows Event Logs told me *what* happened. Sysmon told me *how*, *when*, by
 *what process*, from *what parent*, with *what hash*, and to *what
-destination* — often in a single event.
+destination*, often in a single event.
 
 ---
 
-*Effiong Okon — SOC Analyst | AltSchool Africa*
+*Effiong Okon: SOC Analyst*
 *LinkedIn: linkedin.com/in/okon-effiong/*
 *GitHub: github.com/effiong-okon*
