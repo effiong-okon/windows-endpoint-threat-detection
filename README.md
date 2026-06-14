@@ -64,7 +64,7 @@ Wazuh install.
 
 ### Step 2: Install Wazuh (Manager, Indexer, Dashboard)
 
-![Wazuh installation complete with credentials](screenshots/screenshot-02-wazuh-install-credentials.png)
+![Wazuh installation complete with credentials](screenshots/screenshot-02-wazuh-install-complete.png)
 
 Ran the all-in-one Wazuh installer, which set up the manager, indexer, and
 dashboard together and printed the auto-generated `admin` credentials for
