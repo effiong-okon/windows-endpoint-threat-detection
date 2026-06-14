@@ -29,11 +29,6 @@ The goal was to understand not just how attacks work, but how they look from the
 | Windows 11 VM | Victim Endpoint: "Windows-Endpoint" (Wazuh Agent) | 192.168.56.20 |
 | VirtualBox Host-Only Network | Isolated lab network | 192.168.56.0/24 |
 
-> Note: agent enrolment was initiated against the manager's secondary
-> interface (172.25.219.238) before the host-only network above became the
-> primary path used for the dashboard and all agent communication shown in
-> this investigation.
-
 ---
 
 ## Tools Used
