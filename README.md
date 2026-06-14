@@ -2,8 +2,11 @@
 ### A Wazuh EDR/SIEM Detection Lab
 
 **Lab Type:** Security Engineering + Offensive Simulation + EDR Detection + Incident Response
+
 **Platform:** Wazuh 4.7 (Open Source SIEM + EDR)
+
 **Analyst:** Effiong Okon
+
 **Environment:** Ubuntu 22.04 VM (Wazuh Manager/Indexer/Dashboard + Attacker) | Windows 11 VM (Victim Endpoint + Wazuh Agent) | VirtualBox Host-Only Network
 
 ---
@@ -17,7 +20,7 @@ produces them.
 So I built this lab from scratch: a Wazuh manager, indexer, and dashboard on
 Ubuntu, a Wazuh agent and Sysmon on a Windows 11 endpoint, and a host-only
 network connecting the two. Once the stack was running and producing a clean
-baseline, I switched hats — used the same Ubuntu VM to simulate a realistic
+baseline, I switched hats, used the same Ubuntu VM to simulate a realistic
 post-exploitation attack chain with Metasploit, then switched back to the
 analyst seat and investigated the entire compromise using only the Wazuh
 dashboard.
@@ -48,23 +51,20 @@ that evidence alone.
 
 | Tool | Purpose |
 |---|---|
-| Wazuh 4.7 | SIEM + EDR — centralised detection, alerting, FIM, and SCA |
+| Wazuh 4.7 | SIEM + EDR: Centralised detection, alerting, FIM, and SCA |
 | Sysmon (SwiftOnSecurity config) | Rich endpoint telemetry — process, network, file, registry events |
-| Metasploit Framework | Attack simulation — payload generation and C2 |
+| Metasploit Framework | Attack simulation, payload generation and C2 |
 | msfvenom | Reverse TCP payload generation |
 | Windows Event Viewer | Native log reference for cross-validation |
 | VirtualBox | Isolated lab environment |
 
 ---
 
-## Lab Build — Setting Up the Detection Stack
+## Lab Build: Setting Up the Detection Stack
 
-Before any attack happened, I had to build the platform that would catch it.
-This is normally a Security Engineer's job — in a real SOC you'd inherit a
-dashboard that's already running. Building it myself meant I understood
-exactly where every piece of telemetry in Phase 2 actually comes from.
+Before simulating any attacks, I built the detection platform from scratch. Building it myself helped me understand exactly where every piece of telemetry in Phase 2 actually comes from.
 
-### Step 1 — Prepare the Ubuntu Manager
+### Step 1: Prepare the Ubuntu Manager
 
 [SCREENSHOT 01]
 
